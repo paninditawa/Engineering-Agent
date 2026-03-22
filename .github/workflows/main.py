@@ -3,11 +3,14 @@ import uuid
 import datetime
 import subprocess
 from pathlib import Path
-from crewai import Agent, Task
+from crewai import Agent, Crew, Task
 from crewai.llm import LLM
 
 # Local LLM (Ollama)
-llm = LLM(model="llama3")
+llm = LLM(
+    model="ollama/phi3:latest",
+    base_url="http://localhost:11434"
+    )
 
 def now():
     return datetime.datetime.utcnow().isoformat()
@@ -36,8 +39,22 @@ class EngineeringAgent:
         )
 
     def generate_code(self, spec):
-        prompt = f"Write clean, minimal code for the following requirement:\n\n{spec}\n\nReturn ONLY code."
-        result = self.agent.run(prompt)
+        prompt = f"Write clean, minimal python code for the following requirement:\n\n{spec}\n\nReturn ONLY code."
+        task = Task( 
+            description=(prompt),
+            expected_output="a string of python code that implements the specified functionality",
+            agent=self.agent
+            # tools=[search_tool] # Assign tools if needed
+        )
+        crew = Crew(
+            agents = [self.agent],
+            tasks = [task],
+            verbose = True
+        )        
+        inputs = {
+            "topic_context": "CrewAI is a framework for building multi-agent systems."
+        }
+        result = crew.kickoff(inputs=inputs)
         return result
 
     def write_to_repo(self, file_path, content):
@@ -51,16 +68,17 @@ class EngineeringAgent:
         payload = message["payload"]
 
         try:
+            print("here")
             if task_type == "generate_code":
                 code = self.generate_code(payload["spec"])
-                file_path = payload.get("repo_path", "generated/code.py")
-                saved_path = self.write_to_repo(file_path, code)
-
+                print("here")
+                #file_path = payload.get("repo_path", "generated/code.py")
+                #saved_path = "none yet"#self.write_to_repo(file_path, code)
                 return make_response(
                     sender=self.name,
                     recipient=message["sender"],
                     task_type=task_type,
-                    payload={"file_path": saved_path, "code": code}
+                    payload={ "code": code}
                 )
 
             else:
@@ -85,8 +103,27 @@ class EngineeringAgent:
 
 if __name__ == "__main__":
     import sys
-    raw = sys.stdin.read()
-    message = json.loads(raw)
+    #raw = sys.stdin.read()
+    message = json.loads("""
+    {
+  "id": "req-002",
+  "timestamp": "2026-03-02T16:30:00Z",
+  "sender": "PM",
+  "recipient": "ENG",
+  "task_type": "generate_code",
+  "context": {
+    "priority": "high",
+    "target_release": "2026-04-15"
+  },
+  "payload": {
+    "spec":"write for a calculator that can add, subtract, multiply, and divide two numbers. The calculator should have a simple command-line interface."
+    
+  },
+  "status": "pending",
+  "error": ""
+}
+""")
+    print("got this far")
     agent = EngineeringAgent()
     response = agent.handle_message(message)
     print(json.dumps(response, indent=2))
