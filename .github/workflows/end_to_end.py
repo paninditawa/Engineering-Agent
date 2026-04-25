@@ -149,12 +149,13 @@ class FullSystem:
 
     #function to generate code based on the spec and the plan created by the lead, organized into the files determined by create_necessary_files
     #the code is generated one file at a time, and after each file is generated it is written to a file (the file is created as it is written to)
-    def generate_code(self, spec, plan, file):
+    def generate_code(self, spec, plan, file, file_list):
         task = Task(
             description=f"""
                 You are a software developer on an engineering team consisting of AI coding agents. Your task is to look at the development plan created by your lead developer
                 and write the code from that plan that would need to go into the file "{file}" to implement the functionality specified in the specifications. Write clean, efficient, 
                 well-structured code that meets the specifications and follows best practices for the type of code you are writing.
+                Alongside this file, your teammates will create code for the other necessary files. The list of these files is as follows: {file_list}. The code you write should be organized in a way that makes sense based on the purpose of the file and the overall structure of the project.
 
                 STRICT RULES:
                 - Output ONLY raw code
@@ -163,6 +164,7 @@ class FullSystem:
                 - NO explanations
                 - NO comments unless necessary
                 - The first character must be valid executable code
+                - ONLY write code that would go in the file "{file}", do not write code that would go in any of the other files in the project.
 
                 Spec:
                 {spec}
@@ -278,7 +280,7 @@ def review_and_iterate(self, spec, max_iterations=10):
 
     #Create the initial code and tests, if they all pass then the program basically works perfectly.    
     for file in files:
-        code = self.generate_code(spec, plan, file)
+        code = self.generate_code(spec, plan, file, files)
 
     success_status, error_message = self.run_tests(testing_file)
     if success_status:
@@ -377,7 +379,7 @@ if __name__ == "__main__":
     "target_release": "2026-04-15"
   },
   "payload": {
-    "spec": "Write a python class that simulates a number guessing game. The class should have methods to start a new game, make a guess, and check if the guess is correct. The game should generate a random number between 1 and 100, and the player should have a limited number of attempts to guess the number. The class should also provide feedback on whether the guess is too high, too low, or correct."
+    "spec": "Make me a website that represents a calculator. It should have buttons for input and buttons for addition, multiplication, subtraction, and division. When the user clicks on the buttons, the appropriate input should be shown on the screen and when they click the equals button, the correct answer should be shown on the screen. The website should be visually appealing and easy to use."
   },
   "status": "pending",
   "error": ""
