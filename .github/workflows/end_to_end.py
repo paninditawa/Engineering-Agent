@@ -43,7 +43,22 @@ def make_response(sender, recipient, task_type, payload, status="done", error=No
 class FullSystem:
     def __init__(self):
         self.llm = llm
+
+        # --- VIRTUAL TOKEN SYSTEM SETUP ---
+        # Stricter limits on testers and dev, more for the lead
+        self.token_balances = {
+            "lead": 2000,
+            "dev": 1500,
+            "tester": 500
+        }
         
+        # Each LLM call costs the same, testing has its own 'x' amount cost
+        self.token_costs = {
+            "llm_call": 100,
+            "test_run": 50
+        }
+        # ----------------------------------
+
         #TODO: IDK how much of an issue this will be in the long run but the agent's memories are causing them to sometimes mess up their outputs.
         # setting memory to false is supposed to fix this but doesn't really work, i've been using "reset_memories(command_type="all")" after tasks which seems to have maybe helped?
         # Lead Developer (Planner + Reviewer)
@@ -81,11 +96,34 @@ class FullSystem:
             llm=self.llm
         )
 
+    # --- TOKEN MANAGEMENT METHODS ---
+    def _deduct_tokens(self, role, amount):
+        """Deducts tokens from the specified role. Triggers HR request if Lead runs out."""
+        if self.token_balances[role] < amount:
+            if role == "lead":
+                self._request_hr_tokens()
+            else:
+                raise Exception(f"Token Limit Exceeded: The {role} agent has run out of tokens and cannot complete the task!")
+        
+        self.token_balances[role] -= amount
+        print(f"[{role.upper()} AGENT] Used {amount} tokens. Remaining balance: {self.token_balances[role]}")
+
+    def _request_hr_tokens(self):
+        """Mocks a request to the HR Agent to grant the Lead Dev more tokens."""
+        print("\n[SYSTEM] Lead Developer ran out of tokens! Sending request to HR Agent...")
+        print("[HR AGENT] Request received. Evaluating project priority...")
+        print("[HR AGENT] Approved! Granting Lead Developer 1000 additional emergency tokens.\n")
+        self.token_balances["lead"] += 1000
+    # --------------------------------
+
+
     #Creates a plan based off which the rest of the code is written
     #The plan is consistently pretty good and is currently being stored in plan.md
     #The plan tends to have a lot of formatting either avoid storing it as a string/text file or copy over some of the 'STRICT RULES' form the 
     #coding prompts to reduce the fancy formatting
     def create_plan(self, spec):
+        self._deduct_tokens("lead", self.token_costs["llm_call"])
+        
         task = Task(
             description=f"""
                 You are the Lead developer of an engineering team consisting of AI coding agents. Your job is to create a clear, actionable development plan based on the given specification.
@@ -106,12 +144,14 @@ class FullSystem:
         crew = Crew(agents=[self.lead], tasks=[task])
         plan = str(crew.kickoff())
         crew.reset_memories(command_type="all")
-        return str(plan)  # Return the output of the first task, which is the development plan
+        return str(plan)
 
     #function to figure out what files need to be created for the project based off the spec and the plan made by the lead in create_plan
     #none of these files are actually created until the code is generated in generate_code, this function just determines what files need to be created and returns a list of the file names with extensions
     #IMPORTANT: the testing file is always named "tests" and is the last one in the outputted list. This is used throughout the rest of the code
     def create_necessary_files(self, spec, plan):
+        self._deduct_tokens("lead", self.token_costs["llm_call"])
+        
         task_create_files = Task(
             description=f"""
                 You are the lead developer of an engineering team consisting of AI coding agents. You are woking on building a project following the specifications provided. Based on the development plan you have created, determine what files need to be created for this project.
@@ -126,7 +166,7 @@ class FullSystem:
                 STRICT RULES:
                 - Output ONLY the file names with extensions in a list format, separated by commas with no spaces or any other additional formatting in between.
                 - NO invalid extensions or file names that do not follow standard conventions for the type of code they will contain.
-                - NO markdown (no ``` )
+                - NO markdown (no  )
                 - NO explanations
                 - NO comments
                 - NO new folders or directories, just files to add to the root directory of the project
@@ -140,7 +180,6 @@ class FullSystem:
             """,
             expected_output="A list of necessary files that need to be created for the project, including their names and extensions, seperated by commas with no spaces or any other additional formatting in between.",
             agent=self.lead
-
         )
         crew_files = Crew(agents=[self.lead], tasks=[task_create_files])
         files = str(crew_files.kickoff()).split(",")
@@ -150,6 +189,7 @@ class FullSystem:
     #function to generate code based on the spec and the plan created by the lead, organized into the files determined by create_necessary_files
     #the code is generated one file at a time, and after each file is generated it is written to a file (the file is created as it is written to)
     def generate_code(self, spec, plan, file, file_list):
+        self._deduct_tokens("dev", self.token_costs["llm_call"])
         task = Task(
             description=f"""
                 You are a software developer on an engineering team consisting of AI coding agents. Your task is to look at the development plan created by your lead developer
@@ -189,6 +229,7 @@ class FullSystem:
     #TODO: This function is meant to be like the generate_code function but for fixing code.
     #I think that this would be best implemented by not showing the agent the code it had already written but rather have it re-write code based on the feedback from the lead but i havent tested it yet sp idk
     def fix_code(self, spec, plan, feedback=""):
+        self._deduct_tokens("dev", self.token_costs["llm_call"])
         current = Path("app.py").read_text()
         task = Task(
             description=f"""
@@ -218,6 +259,7 @@ class FullSystem:
     
     #TODO: This function may or may not be necessary. It is currently unused but maybe having a prompt specifically for making tests could make the code less likely to have errors which would be really helpful as the tests having errors in them is a really big problem.
     def generate_tests(self, code):
+        self._deduct_tokens("tester", self.token_costs["llm_call"])
         task = Task(
             description=f"""
                 Write unit tests for the provided code. The code is stored in a file called "app.py".
@@ -244,6 +286,7 @@ class FullSystem:
 
     #TODO: This function is supposed to return True/False based on whether the tests pass followed by a description if necessary. We need to make it so that it can execute both python and js code at least, maybe also execute code in any language.
     def run_tests(self, testing_file):
+        self._deduct_tokens("tester", self.token_costs["test_run"])
         try:
             result = subprocess.run(
                 ["python", testing_file],
@@ -291,6 +334,9 @@ def review_and_iterate(self, spec, max_iterations=10):
     
     while True:
         iteration += 1
+        # Deducting lead tokens for analyzing problems
+        self._deduct_tokens("lead", self.token_costs["llm_call"])
+
         #TODO: implement all the stuff with the lead giving feedback and the feedback being implemented.
         find_problems_task = Task(
             description=f"""
