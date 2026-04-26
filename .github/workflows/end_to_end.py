@@ -510,13 +510,14 @@ if __name__ == '__main__':
 
     #function to generate code based on the spec and the plan created by the lead, organized into the files determined by create_necessary_files
     #the code is generated one file at a time, and after each file is generated it is written to a file (the file is created as it is written to)
-    def generate_code(self, spec, plan, file):
+    def generate_code(self, spec, plan, file, file_list=None):
         chosen_dev = self._agent_for("dev", "generate")
         task = Task(
             description=f"""
                 You are a software developer on an engineering team consisting of AI coding agents. Your task is to look at the development plan created by your lead developer
                 and write the code from that plan that would need to go into the file "{file}" to implement the functionality specified in the specifications. Write clean, efficient, 
                 well-structured code that meets the specifications and follows best practices for the type of code you are writing.
+                Alongside this file, your teammates will create code for the other necessary files. The list of these files is as follows: {file_list}. The code you write should be organized in a way that makes sense based on the purpose of the file and the overall structure of the project.
 
                 STRICT RULES:
                 - Output ONLY raw code
@@ -529,6 +530,7 @@ if __name__ == '__main__':
                                 - NO top-level executable statements besides imports, class/function
                                     definitions, and optional guarded main block:
                                     if __name__ == '__main__': ...
+                - ONLY write code that would go in the file "{file}", do not write code that would go in any of the other files in the project.
 
                 Spec:
                 {spec}
@@ -741,7 +743,7 @@ if __name__ == '__main__':
 
         # Generate source files with the standard code prompt
         for file in source_files:
-            self.generate_code(spec, plan, file)
+            self.generate_code(spec, plan, file, file_list=files)
         # Generate the test file with the dedicated test prompt for better reliability
         self.generate_tests(spec, plan, testing_file, source_files)
 
