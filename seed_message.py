@@ -24,10 +24,12 @@ message = {
         "feature_name": "Number guessing game",
         "spec_link": "",
         "acceptance_criteria": [
-            "Write a Python class that simulates a number guessing game",
+            "Make an app using Streamlit and Python that simulates a number guessing game",
             "The game generates a random number between 1 and 100",
-            "The player has a limited number of attempts to guess the number",
-            "After each guess provide feedback: too high, too low, or correct"
+            "The player has a limited number of attempts to guess the number- after that limit is reached, the player loses",
+            "After each guess provide feedback: too high, too low, or correct",
+            "The game should have a simple and intuitive user interface",
+            "Users should be able to run a main.py file created by the agent to launch the Streamlit app and play the game"
         ]
     },
     "status": "pending",

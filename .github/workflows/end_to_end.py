@@ -230,6 +230,10 @@ class FullSystem:
         spec_l = spec.lower()
         contracts = {}
 
+        # Streamlit apps have UI-based game logic — skip class-level contract checks.
+        if "streamlit" in spec_l:
+            return contracts
+
         if "number guessing" in spec_l or "guessing game" in spec_l:
             methods = ["make_guess"]
             if "start new game" in spec_l or "start_game" in spec_l or "start a new game" in spec_l:
@@ -245,13 +249,24 @@ class FullSystem:
         """Return source filenames that must exist for known feature types."""
         spec_l = spec.lower()
         required = []
-        if "number guessing" in spec_l or "guessing game" in spec_l:
+        # Streamlit apps don't need a standalone game module — let LLM decide structure.
+        if "streamlit" not in spec_l and ("number guessing" in spec_l or "guessing game" in spec_l):
             required.append("number_guessing_game.py")
         return required
 
+    def _is_streamlit_spec(self, spec):
+        return "streamlit" in spec.lower()
+
     def _is_number_guessing_spec(self, spec):
+        """Only true for pure Python class-based number guessing games, not Streamlit apps."""
         spec_l = spec.lower()
+        if "streamlit" in spec_l:
+            return False
         return "number guessing" in spec_l or "guessing game" in spec_l
+
+    def _is_streamlit_number_guessing_spec(self, spec):
+        spec_l = spec.lower()
+        return "streamlit" in spec_l and ("number guessing" in spec_l or "guessing game" in spec_l)
 
     def _number_guessing_plan(self):
         return """1. Create number_guessing_game.py with a NumberGuessingGame class.
@@ -260,6 +275,7 @@ class FullSystem:
 4. Implement make_guess(guess) so guesses below the secret return 'too low', above return 'too high', equal return 'correct', and invalid input returns an invalid-input message.
 5. Do not use input(), print-driven gameplay loops, or embedded tests inside the source module.
 6. Create tests.py with deterministic unittest coverage for class construction, start_new_game, and make_guess behavior.
+7. Create a main.py that imports NumberGuessingGame and launches a Streamlit app to play the game with a simple UI.
 """
 
     def _number_guessing_tests(self):
@@ -321,6 +337,140 @@ class TestNumberGuessingGame(unittest.TestCase):
     def test_make_guess_invalid_input(self):
         result = str(self.game.make_guess('abc')).lower()
         self.assertTrue('invalid' in result or 'enter' in result)
+
+
+if __name__ == '__main__':
+    unittest.main()
+"""
+
+    def _streamlit_number_guessing_plan(self):
+        return """1. Create number_guessing_game.py with a NumberGuessingGame class that contains all game logic.
+2. Implement __init__(max_attempts=5), start_new_game(), and make_guess(guess) in the game logic class.
+3. Create main.py as a Streamlit UI entry point (launch with: streamlit run main.py).
+4. In main.py, store game state in st.session_state and do not use loops to repeatedly create widgets.
+5. Ensure every Streamlit widget has a unique key (especially st.number_input and st.button).
+6. Create tests.py with deterministic unittest tests for number_guessing_game.py only.
+7. Keep UI and game logic separated; tests should not import streamlit.
+"""
+
+    def _streamlit_number_guessing_game_logic(self):
+        return """import random
+
+
+class NumberGuessingGame:
+    def __init__(self, max_attempts=5):
+        self.max_attempts = max_attempts
+        self.attempts_remaining = max_attempts
+        self.secret_number = random.randint(1, 100)
+        self.is_over = False
+
+    def start_new_game(self):
+        self.attempts_remaining = self.max_attempts
+        self.secret_number = random.randint(1, 100)
+        self.is_over = False
+
+    def make_guess(self, guess):
+        if self.is_over:
+            return "Game over. Start a new game to play again."
+
+        try:
+            guess = int(guess)
+        except (TypeError, ValueError):
+            return "Invalid input. Please enter an integer from 1 to 100."
+
+        if guess < 1 or guess > 100:
+            return "Invalid input. Please enter an integer from 1 to 100."
+
+        if guess == self.secret_number:
+            self.is_over = True
+            return "Correct! You guessed the number."
+
+        self.attempts_remaining -= 1
+        if self.attempts_remaining <= 0:
+            self.is_over = True
+            return f"You lose. The number was {self.secret_number}."
+
+        if guess < self.secret_number:
+            return f"Too low. Attempts remaining: {self.attempts_remaining}"
+        return f"Too high. Attempts remaining: {self.attempts_remaining}"
+"""
+
+    def _streamlit_number_guessing_main(self):
+        return """import streamlit as st
+from number_guessing_game import NumberGuessingGame
+
+
+def _init_state():
+    if "game" not in st.session_state:
+        st.session_state.game = NumberGuessingGame(max_attempts=5)
+    if "feedback" not in st.session_state:
+        st.session_state.feedback = "Make a guess to begin."
+
+
+def main():
+    st.set_page_config(page_title="Number Guessing Game", page_icon="🎯")
+    st.title("🎯 Number Guessing Game")
+    st.write("Guess a number between 1 and 100")
+
+    _init_state()
+    game = st.session_state.game
+
+    st.caption(f"Attempts remaining: {game.attempts_remaining}")
+
+    guess = st.number_input(
+        "Enter your guess",
+        min_value=1,
+        max_value=100,
+        step=1,
+        key="guess_input",
+    )
+
+    if st.button("Submit Guess", key="submit_guess"):
+        st.session_state.feedback = game.make_guess(guess)
+
+    st.info(st.session_state.feedback)
+
+    if st.button("Start New Game", key="new_game_button"):
+        game.start_new_game()
+        st.session_state.feedback = "New game started. Make a guess!"
+
+
+if __name__ == "__main__":
+    main()
+"""
+
+    def _streamlit_number_guessing_tests(self):
+        return """import unittest
+from number_guessing_game import NumberGuessingGame
+
+
+class TestNumberGuessingGame(unittest.TestCase):
+    def setUp(self):
+        self.game = NumberGuessingGame(max_attempts=3)
+        self.game.secret_number = 42
+
+    def test_valid_low_guess(self):
+        result = self.game.make_guess(10).lower()
+        self.assertIn("low", result)
+
+    def test_valid_high_guess(self):
+        result = self.game.make_guess(80).lower()
+        self.assertIn("high", result)
+
+    def test_correct_guess(self):
+        result = self.game.make_guess(42).lower()
+        self.assertIn("correct", result)
+
+    def test_invalid_guess(self):
+        result = self.game.make_guess("abc").lower()
+        self.assertIn("invalid", result)
+
+    def test_game_over_when_attempts_exhausted(self):
+        self.game.make_guess(1)
+        self.game.make_guess(2)
+        result = self.game.make_guess(3).lower()
+        self.assertIn("lose", result)
+        self.assertTrue(self.game.is_over)
 
 
 if __name__ == '__main__':
@@ -425,10 +575,23 @@ if __name__ == '__main__':
     #The plan tends to have a lot of formatting either avoid storing it as a string/text file or copy over some of the 'STRICT RULES' form the 
     #coding prompts to reduce the fancy formatting
     def create_plan(self, spec):
+        if self._is_streamlit_number_guessing_spec(spec):
+            return self._streamlit_number_guessing_plan()
+
         if self._is_number_guessing_spec(spec):
             return self._number_guessing_plan()
 
         chosen_lead = self._agent_for("lead", "plan")
+        streamlit_hint = ""
+        if self._is_streamlit_spec(spec):
+            streamlit_hint = """
+                STREAMLIT APP REQUIREMENTS:
+                - The app must use Streamlit for the UI. Do NOT use input() or print() for interaction.
+                - Game logic should go in a separate module (e.g. game.py) so it can be unit tested independently.
+                - A main.py file must be created that launches the Streamlit app (e.g. contains `import streamlit as st` and the UI code).
+                - A tests.py file must test the game logic module (not the Streamlit UI).
+                - The player must be able to launch the app by running: streamlit run main.py
+            """
         task = Task(
             description=f"""
                 You are the Lead developer of an engineering team consisting of AI coding agents. Your job is to create a clear, actionable development plan based on the given specification.
@@ -439,6 +602,7 @@ if __name__ == '__main__':
                 - A git repository has already been created for this project, so you do not need to include any steps related to setting up a repository or version control in your plan.
                 - no folder structure is necessary, just a list of files with extensions that are necessary for the project based on the specifications and the plan you have created.
                 - Focus ONLY on the development steps necessary to implement the functionality based on the specifications, and organizing the code into appropriate files.
+                {streamlit_hint}
 
                 Spec:
                 {spec}
@@ -455,16 +619,25 @@ if __name__ == '__main__':
     #none of these files are actually created until the code is generated in generate_code, this function just determines what files need to be created and returns a list of the file names with extensions
     #IMPORTANT: the testing file is always named "tests" and is the last one in the outputted list. This is used throughout the rest of the code
     def create_necessary_files(self, spec, plan):
-        # For number guessing tasks, force a deterministic file set to reduce drift.
+        if self._is_streamlit_number_guessing_spec(spec):
+            return ["number_guessing_game.py", "main.py", "tests.py"]
+
+        # For pure Python class-based number guessing, force a deterministic file set.
         if self._is_number_guessing_spec(spec):
             return ["number_guessing_game.py", "tests.py"]
 
         chosen_lead = self._agent_for("lead", "file_list")
+        streamlit_file_hint = ""
+        if self._is_streamlit_spec(spec):
+            streamlit_file_hint = """
+                STREAMLIT REQUIREMENT: You MUST include main.py (the Streamlit UI entry point) as a source file.
+                The file list must end with tests.py. Example output: game.py,main.py,tests.py"""
         task_create_files = Task(
             description=f"""
                 You are the lead developer of an engineering team consisting of AI coding agents. You are woking on building a project following the specifications provided. Based on the development plan you have created, determine what files need to be created for this project.
                 To complete this task, create a list containing the names of the files that need to be created along with the extension (e.g. "app.py" for the main code, "test_app.py" for tests, etc.). The files you list should be seperated by commas with no spaces or any other additional formatting in between.
                 You will only be making one testing file! Name it "tests" and have it be the last one in the list!
+                {streamlit_file_hint}
                 
                 IMPORTANT:
                 - no folder structure is necessary, just a list of files with extensions that are necessary for the project based on the specifications and the plan you have created.
@@ -495,6 +668,9 @@ if __name__ == '__main__':
 
         # Enforce mandatory source files so contract checks remain satisfiable.
         required_sources = self._required_source_files(spec)
+        # For Streamlit apps, always include main.py as a source file.
+        if self._is_streamlit_spec(spec) and "main.py" not in required_sources:
+            required_sources.append("main.py")
         if files:
             testing_file = files[-1]
             source_files = files[:-1]
@@ -511,7 +687,30 @@ if __name__ == '__main__':
     #function to generate code based on the spec and the plan created by the lead, organized into the files determined by create_necessary_files
     #the code is generated one file at a time, and after each file is generated it is written to a file (the file is created as it is written to)
     def generate_code(self, spec, plan, file, file_list=None):
+        if self._is_streamlit_number_guessing_spec(spec):
+            deterministic = None
+            if file == "number_guessing_game.py":
+                deterministic = self._streamlit_number_guessing_game_logic()
+            elif file == "main.py":
+                deterministic = self._streamlit_number_guessing_main()
+            if deterministic is not None:
+                out_path = Path(OUTPUT_DIR) / file
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(out_path, "w", encoding="utf-8") as f:
+                    f.write(deterministic)
+                return deterministic
+
         chosen_dev = self._agent_for("dev", "generate")
+        streamlit_hint = ""
+        if self._is_streamlit_spec(spec) and file == "main.py":
+            streamlit_hint = """
+                STREAMLIT SPECIFIC RULES for main.py:
+                - This file IS the Streamlit app entry point.
+                - Import streamlit as st and use st.* components for all UI (buttons, text input, st.write, etc.).
+                - Do NOT use input() or print() for user interaction.
+                - Import game logic from the other source file(s) in the project.
+                - The player launches this app with: streamlit run main.py
+            """
         task = Task(
             description=f"""
                 You are a software developer on an engineering team consisting of AI coding agents. Your task is to look at the development plan created by your lead developer
@@ -531,6 +730,7 @@ if __name__ == '__main__':
                                     definitions, and optional guarded main block:
                                     if __name__ == '__main__': ...
                 - ONLY write code that would go in the file "{file}", do not write code that would go in any of the other files in the project.
+                {streamlit_hint}
 
                 Spec:
                 {spec}
@@ -560,6 +760,14 @@ if __name__ == '__main__':
         """Dedicated test-generation prompt — produces more reliable test code than the
         generic generate_code prompt because it explicitly tells the agent what the source
         files are and what they need to test."""
+        if self._is_streamlit_number_guessing_spec(spec):
+            result = self._streamlit_number_guessing_tests()
+            out_path = Path(OUTPUT_DIR) / file
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(result)
+            return result
+
         if self._is_number_guessing_spec(spec):
             result = self._number_guessing_tests()
             out_path = Path(OUTPUT_DIR) / file
@@ -570,6 +778,16 @@ if __name__ == '__main__':
 
         chosen_tester = self._agent_for("tester", "test_gen")
         source_listing = "\n".join(source_files)
+        streamlit_test_hint = ""
+        if self._is_streamlit_spec(spec):
+            # Exclude main.py from what gets tested — Streamlit UI is not unit-testable.
+            testable_sources = [f for f in source_files if f != "main.py"]
+            source_listing = "\n".join(testable_sources)
+            streamlit_test_hint = """
+                STREAMLIT NOTE: Do NOT import streamlit or test the Streamlit UI.
+                Only test the game logic from the non-UI source files.
+                Do not import main.py in the tests.
+            """
         task = Task(
             description=f"""
                 You are a Testing Engineer on a team of AI coding agents. Write a complete unit test file
@@ -588,6 +806,7 @@ if __name__ == '__main__':
                 - Always end the file with: if __name__ == '__main__': unittest.main()
                 - Tests MUST NOT require user input().
                 - Tests must import source modules without triggering gameplay.
+                {streamlit_test_hint}
 
                 Spec:
                 {spec}
@@ -677,6 +896,41 @@ if __name__ == '__main__':
 
         return True, "Number guessing behavior checks passed."
 
+    def run_streamlit_ui_checks(self):
+        """Validate basic Streamlit UI quality in generated main.py."""
+        main_path = Path(OUTPUT_DIR) / "main.py"
+        if not main_path.exists():
+            return False, "main.py was not generated"
+
+        content = main_path.read_text(encoding="utf-8")
+        if "import streamlit as st" not in content and "from streamlit" not in content:
+            return False, "main.py does not import streamlit"
+        if "input(" in content:
+            return False, "main.py uses input(), which is invalid for Streamlit UI"
+
+        try:
+            tree = ast.parse(content)
+        except Exception as e:
+            return False, f"Streamlit main.py parse error: {e}"
+
+        number_inputs = 0
+        number_input_with_key = 0
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if isinstance(node.func.value, ast.Name) and node.func.value.id == "st":
+                    if node.func.attr == "number_input":
+                        number_inputs += 1
+                        for kw in node.keywords:
+                            if kw.arg == "key":
+                                number_input_with_key += 1
+
+        if number_inputs == 0:
+            return False, "main.py does not define any st.number_input widget"
+        if number_input_with_key < number_inputs:
+            return False, "Every st.number_input must include a unique key=..."
+
+        return True, "Streamlit UI checks passed."
+
     def run_tests(self, testing_file):
         """Run a test file and return (passed: bool, detail: str).
         Supports Python (.py) and JavaScript (.js via node) test files.
@@ -753,7 +1007,11 @@ if __name__ == '__main__':
         if not contract_ok:
             success_status, error_message = False, contract_message
         else:
-            if self._is_number_guessing_spec(spec):
+            if self._is_streamlit_number_guessing_spec(spec):
+                success_status, error_message = self.run_streamlit_ui_checks()
+                if success_status:
+                    success_status, error_message = self.run_tests(str(Path(OUTPUT_DIR) / testing_file))
+            elif self._is_number_guessing_spec(spec):
                 success_status, error_message = self.run_number_guessing_behavior_checks()
                 if success_status:
                     success_status, error_message = self.run_tests(str(Path(OUTPUT_DIR) / testing_file))
@@ -794,6 +1052,11 @@ if __name__ == '__main__':
 
             # Step 2: Dev re-generates each non-test file using the feedback
             for file in files[:-1]:
+                if self._is_streamlit_number_guessing_spec(spec):
+                    # Keep this benchmark deterministic and stable.
+                    self.generate_code(spec, plan, file, file_list=files)
+                    continue
+
                 chosen_dev = self._agent_for("dev", "fix")
                 fix_task = Task(
                     description=f"""
@@ -834,7 +1097,11 @@ if __name__ == '__main__':
             if not contract_ok:
                 success_status, error_message = False, contract_message
             else:
-                if self._is_number_guessing_spec(spec):
+                if self._is_streamlit_number_guessing_spec(spec):
+                    success_status, error_message = self.run_streamlit_ui_checks()
+                    if success_status:
+                        success_status, error_message = self.run_tests(str(Path(OUTPUT_DIR) / testing_file))
+                elif self._is_number_guessing_spec(spec):
                     success_status, error_message = self.run_number_guessing_behavior_checks()
                     if success_status:
                         success_status, error_message = self.run_tests(str(Path(OUTPUT_DIR) / testing_file))
